@@ -1,103 +1,84 @@
-import os
-import uuid
-import sqlite3
-import cPickle as pickle
-import unittest
+from snap import *
+def intro():
 
-class PersistentDictionary(object):
-    """
-    A sqlite based key,value storage.
-    The value can be any pickleable object.
-    Similar interface to Python dict
-    Supports the GLOB syntax in methods keys(),items(), __delitem__()
-    Usage Example:
-    >>> p = PersistentDictionary(path='test.sqlite')
-    >>> key = 'test/' + p.uuid()
-    >>> p[key] = {'a': 1, 'b': 2}
-    >>> print p[key]
-    {'a': 1, 'b': 2}
-    >>> print len(p.keys('test/*'))
-    1
-    >>> del p[key]
-    """
+    # create a graph PNGraph
+    G1 = TNGraph.New()
+    G1.AddNode(1)
+    G1.AddNode(5)
+    G1.AddNode(32)
+    G1.AddEdge(1,5)
+    G1.AddEdge(5,1)
+    G1.AddEdge(5,32)
+    print "G1: Nodes %d, Edges %d" % (G1.GetNodes(), G1.GetEdges())
 
-    CREATE_TABLE = "CREATE TABLE persistence (pkey, pvalue)"
-    SELECT_KEYS = "SELECT pkey FROM persistence WHERE pkey GLOB ?"
-    SELECT_VALUE = "SELECT pvalue FROM persistence WHERE pkey GLOB ?"
-    INSERT_KEY_VALUE = "INSERT INTO persistence(pkey, pvalue) VALUES (?,?)"
-    UPDATE_KEY_VALUE = "UPDATE persistence SET pvalue = ? WHERE pkey = ?"
-    DELETE_KEY_VALUE = "DELETE FROM persistence WHERE pkey LIKE ?"
-    SELECT_KEY_VALUE = "SELECT pkey,pvalue FROM persistence WHERE pkey GLOB ?"
+    # create a directed random graph on 100 nodes and 1k edges
+    G2 = GenRndGnm(PNGraph, 100, 1000)
+    print "G2: Nodes %d, Edges %d" % (G2.GetNodes(), G2.GetEdges())
 
-    def __init__(self,
-                 path='persistence.sqlite',
-                 autocommit=True,
-                 serializer=pickle):
-        self.path = path
-        self.autocommit = autocommit
-        self.serializer = serializer
-        create_table = not os.path.exists(path)
-        self.connection  = sqlite3.connect(path)
-        self.connection.text_factory = str # do not use unicode
-        self.cursor = self.connection.cursor()
-        if create_table:
-            self.cursor.execute(self.CREATE_TABLE)
-            self.connection.commit()
+    # traverse the nodes
+    for NI in G2.Nodes():
+        print "node id %d with out-degree %d and in-degree %d" % (
+            NI.GetId(), NI.GetOutDeg(), NI.GetInDeg())
+    # traverse the edges
+    for EI in G2.Edges():
+        print "edge (%d, %d)" % (EI.GetSrcNId(), EI.GetDstNId())
 
-    def uuid(self):
-        return str(uuid.uuid4())
+    # traverse the edges by nodes
+    for NI in G2.Nodes():
+        for Id in NI.GetOutEdges():
+            print "edge (%d %d)" % (NI.GetId(), Id)
 
-    def keys(self,pattern='*'):
-        "returns a list of keys filtered by a pattern, * is the wildcard"
-        self.cursor.execute(self.SELECT_KEYS,(pattern,))
-        return [row[0] for row in self.cursor.fetchall()]
+    # generate a network using Forest Fire model
+    G3 = GenForestFire(1000, 0.35, 0.35)
+    print "G3: Nodes %d, Edges %d" % (G3.GetNodes(), G3.GetEdges())
 
-    def __contains__(self,key):
-        return True if self.get(key)!=None else False
+    # save and load binary
+    FOut = TFOut("test.graph")
+    G3.Save(FOut)
+    FOut.Flush()
+    FIn = TFIn("test.graph")
+    G4 = TNGraph.Load(FIn)
+    print "G4: Nodes %d, Edges %d" % (G4.GetNodes(), G4.GetEdges())
 
-    def __iter__(self):
-        for key in self:
-            yield key
+    # save and load from a text file
+    SaveEdgeList(G4, "test.txt", "Save as tab-separated list of edges")
+    G5 = LoadEdgeList(PNGraph, "test.txt", 0, 1)
+    print "G5: Nodes %d, Edges %d" % (G5.GetNodes(), G5.GetEdges())
 
-    def __setitem__(self,key, value):
-        if key in self:
-            if value is None:
-                del self[key]
-            else:
-                svalue = self.serializer.dumps(value)
-                self.cursor.execute(self.UPDATE_KEY_VALUE, (svalue, key))
-        else:
-            svalue = self.serializer.dumps(value)
-            self.cursor.execute(self.INSERT_KEY_VALUE, (key, svalue))
-        if self.autocommit: self.connection.commit()
+    # generate a network using Forest Fire model
+    G6 = GenForestFire(1000, 0.35, 0.35)
+    print "G6: Nodes %d, Edges %d" % (G6.GetNodes(), G6.GetEdges())
+    # convert to undirected graph
+    G7 = ConvertGraph(PUNGraph,G6)
+    print "G7: Nodes %d, Edges %d" % (G7.GetNodes(), G7.GetEdges())
+    # get largest weakly connected component of G
+    WccG = GetMxWcc(G6)
+    # get a subgraph induced on nodes {0,1,2,3,4,5}
+    SubG = GetSubGraph(G6, TIntV.GetV(0,1,2,3,4))
+    # get 3-core of G
+    Core3 = GetKCore(G6, 3)
+    # delete nodes of out degree 10 and in degree 5
+    DelDegKNodes(G6, 10, 5)
+    print "G6a: Nodes %d, Edges %d" % (G6.GetNodes(), G6.GetEdges())
 
-    def get(self,key):
-        self.cursor.execute(self.SELECT_VALUE, (key,))
-        row = self.cursor.fetchone()
-        return self.serializer.loads(row[0]) if row else None
+    # generate a Preferential Attachment graph on 1000 nodes and node out degree of 3
+    G8 = GenPrefAttach(1000, 3)
+    print "G8: Nodes %d, Edges %d" % (G8.GetNodes(), G8.GetEdges())
+    # vector of pairs of integers (size, count)
+    CntV = TIntPrV()
+    # get distribution of connected components (component size, count)
+    GetWccSzCnt(G8, CntV)
+    # get degree distribution pairs (degree, count)
+    GetOutDegCnt(G8, CntV)
+    # vector of floats
+    EigV = TFltV()
+    # get first eigenvector of graph adjacency matrix
+    GetEigVec(G8, EigV)
+    # get diameter of G8
+    GetBfsFullDiam(G8, 100)
+    # count the number of triads in G8, get the clustering coefficient of G8
+    GetTriads(G8)
+    GetClustCf(G8)
 
-    def __getitem__(self, key):
-        self.cursor.execute(self.SELECT_VALUE, (key,))
-        row = self.cursor.fetchone()
-        if not row: raise KeyError
-        return self.serializer.loads(row[0])
-
-    def __delitem__(self, pattern):
-        self.cursor.execute(self.DELETE_KEY_VALUE, (pattern,))
-        if self.autocommit: self.connection.commit()
-
-    def items(self,pattern='*'):
-        self.cursor.execute(self.SELECT_KEY_VALUE, (pattern,))
-        return [(row[0], self.serializer.loads(row[1])) \
-                    for row in self.cursor.fetchall()]
-
-    def dumps(self,pattern='*'):
-        self.cursor.execute(self.SELECT_KEY_VALUE, (pattern,))
-        rows = self.cursor.fetchall()
-        return self.serializer.dumps(dict((row[0], self.serializer.loads(row[1]))
-                                          for row in rows))
-
-    def loads(self, raw):
-        data = self.serializer.loads(raw)
-        for key, value in data.iteritems():
-            self[key] = value
+if __name__ == '__main__':
+    intro()
